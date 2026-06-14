@@ -1,0 +1,7 @@
+anthropic
+yfinance
+ccxt
+requests
+feedparser
+python-dotenv
+rich
