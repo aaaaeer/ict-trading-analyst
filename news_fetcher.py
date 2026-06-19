@@ -30,9 +30,9 @@ ASSET_TERMS: dict[str, list[str]] = {
 }
 
 RSS_FEEDS = [
-    "https://feeds.reuters.com/reuters/businessNews",
     "https://www.fxstreet.com/rss/news",
-    "https://www.investing.com/rss/news.rss",
+    "https://www.dailyfx.com/feeds/all",
+    "https://feeds.reuters.com/reuters/businessNews",
 ]
 
 
@@ -87,10 +87,13 @@ def fetch_news(asset: str, api_key: str | None = None) -> dict:
         for feed_url in RSS_FEEDS:
             try:
                 feed = feedparser.parse(feed_url)
-                for entry in feed.entries[:30]:
+                if not feed.entries:
+                    continue
+                for entry in feed.entries[:40]:
                     title = entry.get("title", "")
                     summary = entry.get("summary", "")
                     combined = f"{title} {summary}"
+                    # Match any search term (case-insensitive)
                     if any(t.lower() in combined.lower() for t in terms):
                         headlines.append({
                             "title": title,
@@ -100,10 +103,11 @@ def fetch_news(asset: str, api_key: str | None = None) -> dict:
                         })
                     if len(headlines) >= 10:
                         break
+                if headlines:
+                    break  # Stop after first feed that returns results
             except Exception as e:
                 print(f"[news] RSS error ({feed_url}): {e}")
-            if len(headlines) >= 10:
-                break
+
 
     sentiments = [h["sentiment"] for h in headlines]
     bull_count = sentiments.count("bullish")

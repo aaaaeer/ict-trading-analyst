@@ -19,40 +19,93 @@ NATIVE_TYPES = {
     ".webp": "image/webp",
 }
 
-SINGLE_PROMPT = """You are an expert ICT (Inner Circle Trader) technical analyst.
-Analyse this trading chart screenshot and extract:
-- Asset and timeframe (if visible)
-- Current price action structure: HH, HL, LH, LL (market structure)
-- Any visible FVGs (Fair Value Gaps) and their direction
-- Order blocks (OB): bullish or bearish, and approximate price levels
-- Liquidity pools: buy-side or sell-side (equal highs/lows, swing points)
-- Current trend on this timeframe
-- Any visible killzone (London, NY, Asia)
-- Any obvious POI (Point of Interest) price levels
-Return your analysis as JSON with keys:
-asset, timeframe, structure, fvgs, order_blocks, liquidity, trend, killzone, poi_levels"""
+VISUAL_LEGEND = """
+CHART VISUAL LEGEND — read these elements exactly as drawn:
+
+1. RED FILLED BOXES → FVG (Fair Value Gap)
+   - A red shaded/filled rectangle on the chart = a bearish FVG (imbalance to the downside)
+   - Read the top and bottom price of the box as the FVG range
+   - These are areas price may return to fill before continuing down
+
+2. GREEN AND RED LINES → Market Structure (CHoCH / BOS)
+   - A labelled line marked "CHoCH" (Change of Character) = structure shift, potential trend reversal
+   - A labelled line marked "BOS" (Break of Structure) = trend continuation confirmation
+   - Green CHoCH/BOS line = bullish structure break
+   - Red CHoCH/BOS line = bearish structure break
+   - Read the price level of the line and whether it is bullish or bearish
+
+3. SMALL BLUE BOXES → Order Blocks (OB)
+   - Small blue shaded rectangles = order blocks
+   - If the box is below current price = bullish OB (demand zone, potential support)
+   - If the box is above current price = bearish OB (supply zone, potential resistance)
+   - Read the price range of each box
+
+4. LARGE BLUE BOXES WITH A HORIZONTAL LINE THROUGH THE MIDDLE → Large FVG
+   - A large blue rectangle with a midline = a significant Fair Value Gap (bigger imbalance)
+   - The midline = the 50% equilibrium of the FVG (key magnetic level)
+   - These act as major draw-on-liquidity targets
+   - Read the top, midline, and bottom price of the box
+
+5. SESSION LABELS / BOXES (London, NY, Asia, "L H", "L L", "NY H", "NY L") → Session High/Low reference levels
+   - These boxes or horizontal lines labelled with session names mark the HIGH and LOW of a PAST session
+   - They are NOT indicators of the currently active session — they are historical liquidity reference points
+   - "London H" or "L H" = the high price reached during the London session (a sell-side liquidity level above)
+   - "London L" or "L L" = the low price reached during the London session (a buy-side liquidity level below)
+   - "NY H" / "NY L" = New York session high and low (liquidity levels)
+   - "Asia H" / "Asia L" = Asian session high and low (Asian range boundary — often swept at London open)
+   - Record these as liquidity levels, NOT as the current killzone
+   - The "killzone" field should reflect which session is likely active based on the candle activity visible,
+     NOT based on the session labels on the chart
+
+For ALL elements: read the actual price numbers from the chart's Y-axis scale.
+If a price label is visible on or near the box/line, record it exactly.
+If no label is visible, estimate from the Y-axis.
+"""
+
+SINGLE_PROMPT = """You are an expert ICT (Inner Circle Trader) technical analyst with precise visual reading ability.
+
+""" + VISUAL_LEGEND + """
+
+Analyse this trading chart screenshot and extract every visible element using the legend above.
+
+Return ONLY valid JSON, no other text, matching this structure exactly:
+{
+  "asset": "ticker if visible or null",
+  "timeframe": "e.g. 1H or 15M",
+  "structure": "HH+HL bullish | LH+LL bearish | mixed — include CHoCH/BOS direction and price level if visible",
+  "trend": "bullish|bearish|ranging",
+  "fvgs": [{"direction": "bearish", "top": 0.0, "bottom": 0.0}],
+  "large_fvgs": [{"direction": "bullish|bearish", "top": 0.0, "midline": 0.0, "bottom": 0.0}],
+  "order_blocks": [{"direction": "bullish|bearish", "top": 0.0, "bottom": 0.0}],
+  "liquidity": "describe equal highs/lows, BSL/SSL, and any visible session high/low labels (e.g. London H at 215.50, Asia L at 213.80)",
+  "killzone": "London|NY|Asia|none — based on visible candle activity, NOT session label boxes",
+  "poi_levels": ["195.40", "194.80"]
+}"""
 
 MULTI_PROMPT = """You are an expert ICT (Inner Circle Trader) technical analyst performing multi-timeframe analysis.
-You have been given {n} trading chart screenshots. They represent different timeframes of the same (or related) asset.
-Treat them in the order provided — Chart 1 is typically the highest timeframe, the last chart the lowest.
+You have been given {n} trading chart screenshots. Treat them in order — Chart 1 is the highest timeframe, last is lowest.
 
-For EACH chart extract:
+""" + VISUAL_LEGEND + """
+
+For EACH chart, carefully identify every visual element using the legend above and extract:
+
   asset, timeframe (identify or estimate: 1W/1D/4H/1H/15M/5M/1M),
-  structure (HH+HL=bullish | LH+LL=bearish | mixed),
-  fvgs (list: {{"direction": "bullish|bearish", "level": <price or null>}}),
-  order_blocks (list: {{"type": "bullish|bearish", "level": <price or null>}}),
-  liquidity ("buy-side above <level>" | "sell-side below <level>" | description),
-  trend (bullish|bearish|ranging),
-  killzone (London|NY|Asia|none),
-  poi_levels (list of notable price levels as strings)
+  structure: string — "HH+HL bullish | LH+LL bearish | mixed" — include CHoCH/BOS direction and level if visible,
+  fvgs: list of red boxes — [{{"direction": "bearish", "top": <price>, "bottom": <price>}}],
+  large_fvgs: list of large blue boxes with midline — [{{"direction": "bullish|bearish", "top": <price>, "midline": <price>, "bottom": <price>}}],
+  order_blocks: list of small blue boxes — [{{"direction": "bullish|bearish", "top": <price>, "bottom": <price>}}],
+  liquidity: description of BSL/SSL, equal highs/lows, and any session high/low reference labels visible (e.g. "London H 215.50, Asia L 213.80"),
+  trend: bullish|bearish|ranging,
+  killzone: London|NY|Asia|none — based on visible candle activity, NOT session label boxes,
+  poi_levels: list of key price levels as strings
 
-Then synthesise across all charts:
-  htf_bias: directional bias from the higher timeframes
-  ltf_bias: short-term bias from the lower timeframes
-  combined_trend: overall multi-TF trend description
-  confluence_notes: where timeframes agree or conflict
+Then synthesise:
+  htf_bias: overall directional bias from higher timeframes
+  ltf_bias: short-term bias from lower timeframes
+  combined_trend: multi-TF trend description
+  confluence_notes: where timeframes agree or conflict, which OBs/FVGs line up across TFs
 
-Return ONLY valid JSON — no extra text — matching this structure exactly:
+Return ONLY valid JSON — no extra text:
 {{
   "asset": "...",
   "timeframe": "multi-timeframe",
@@ -60,8 +113,9 @@ Return ONLY valid JSON — no extra text — matching this structure exactly:
   "ltf_bias": "bullish|bearish|neutral",
   "combined_trend": "...",
   "confluence_notes": "...",
-  "structure": "<from HTF chart>",
+  "structure": "...",
   "fvgs": [],
+  "large_fvgs": [],
   "order_blocks": [],
   "liquidity": "...",
   "trend": "...",
@@ -74,6 +128,7 @@ Return ONLY valid JSON — no extra text — matching this structure exactly:
       "timeframe": "...",
       "structure": "...",
       "fvgs": [],
+      "large_fvgs": [],
       "order_blocks": [],
       "liquidity": "...",
       "trend": "...",
@@ -106,12 +161,33 @@ def _media_type(path: str) -> str:
 
 
 def _parse_json(text: str) -> dict:
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
+    # 1. Strip markdown code fences
+    cleaned = re.sub(r"```(?:json)?", "", text).strip()
+
+    # 2. Try the whole cleaned string first
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Find outermost { ... } using brace counting (handles nested objects)
+    start = cleaned.find("{")
+    if start != -1:
+        depth = 0
+        for i, ch in enumerate(cleaned[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(cleaned[start : i + 1])
+                    except json.JSONDecodeError:
+                        break
+
+    # 4. Log what came back so the user can see it
+    preview = text[:300].replace("\n", " ")
+    print(f"\n[chart_vision] Could not parse JSON. Claude returned:\n  {preview}\n")
     return {"raw": text, "error": "Could not parse JSON from vision response"}
 
 
@@ -169,7 +245,7 @@ def analyze_charts(image_paths: list[str]) -> dict:
 
     result = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=2048,
+        max_tokens=4096,
         system=MULTI_PROMPT.format(n=len(image_paths)),
         messages=[{"role": "user", "content": content}],
     )

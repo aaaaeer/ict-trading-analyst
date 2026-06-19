@@ -45,8 +45,10 @@ def generate_bias(
         structure = str(chart_data.get("structure", "")).lower()
         trend = str(chart_data.get("trend", "")).lower()
 
-        bullish_structure = any(k in structure for k in ("hh", "hl")) and not any(k in structure for k in ("lh", "ll"))
-        bearish_structure = any(k in structure for k in ("lh", "ll")) and not any(k in structure for k in ("hh", "hl"))
+        bullish_structure = any(k in structure for k in ("hh", "hl", "bullish", "choch bullish", "bos bullish")) \
+            and not any(k in structure for k in ("lh", "ll", "bearish"))
+        bearish_structure = any(k in structure for k in ("lh", "ll", "bearish", "choch bearish", "bos bearish")) \
+            and not any(k in structure for k in ("hh", "hl", "bullish"))
 
         if bullish_structure or ("bullish" in structure and "bearish" not in structure):
             htf = 30
@@ -70,10 +72,24 @@ def generate_bias(
     liq = str(chart_data.get("liquidity", "")).lower()
     liq_score = 0.0
 
-    if "buy" in liq or "bsl" in liq:
+    # Swept keywords: BSL/SSL that has already been taken is a reversal signal, not a draw
+    _swept = ("swept", "taken", "grabbed", "cleared", "raided", "already ran", "swept above",
+              "grabbed above", "price swept", "ran above", "ran through")
+    bsl_present = "buy" in liq or "bsl" in liq
+    ssl_present = "sell" in liq or "ssl" in liq
+    bsl_swept = bsl_present and any(k in liq for k in _swept)
+    ssl_swept = ssl_present and any(k in liq for k in _swept)
+
+    if bsl_swept:
+        liq_score = -20
+        reasoning.append("Liquidity: BSL already swept → bearish reversal signal (liquidity grab complete)")
+    elif bsl_present:
         liq_score = 25
         reasoning.append("Liquidity: Buy-side liquidity above price → bullish draw")
-    elif "sell" in liq or "ssl" in liq:
+    elif ssl_swept:
+        liq_score = 20
+        reasoning.append("Liquidity: SSL already swept → bullish reversal signal (liquidity grab complete)")
+    elif ssl_present:
         liq_score = -25
         reasoning.append("Liquidity: Sell-side liquidity below price → bearish draw")
     else:
@@ -83,18 +99,62 @@ def generate_bias(
     breakdown["liquidity"] = liq_score
 
     # ── Step 3: FVG + Order Block Confluence (20%) ───────────────────────────
-    fvg_str = str(chart_data.get("fvgs", "")).lower()
-    ob_str = str(chart_data.get("order_blocks", "")).lower()
-    ob_score = 0.0
+    # Check actual price levels: only score zones price is AT or APPROACHING
+    # Bearish zones above price = resistance; bullish zones below price = support
+    current_p = market_data.get("current_price")
 
-    if "bullish" in fvg_str or "bullish" in ob_str:
-        ob_score += 20
-        reasoning.append("POI: Bullish FVG/OB → confluence with upside")
-    if "bearish" in fvg_str or "bearish" in ob_str:
-        ob_score -= 20
-        reasoning.append("POI: Bearish FVG/OB → confluence with downside")
-    if ob_score == 0:
-        reasoning.append("POI: No FVG/OB signals detected")
+    def _score_zones(items, label, weight) -> tuple[float, list[str]]:
+        """Return (net_score, reasons) for a list of FVG/OB dicts."""
+        bull = 0
+        bear = 0
+        reasons = []
+        if not isinstance(items, list):
+            # Fallback: string check
+            s = str(items).lower()
+            if "bearish" in s:
+                bear += weight
+            if "bullish" in s:
+                bull += weight
+            return bull - bear, []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            d = str(item.get("direction", "")).lower()
+            top = item.get("top")
+            bot = item.get("bottom")
+            if not d:
+                continue
+            if d == "bearish":
+                # Bearish zone matters if price is below or inside it (approaching resistance)
+                if top and current_p and current_p <= top * 1.005:
+                    bear += weight
+                    reasons.append(f"Bearish {label} {bot}–{top} → price approaching/inside resistance")
+            elif d == "bullish":
+                # Bullish zone matters if price is above or inside it (at demand)
+                if bot and current_p and current_p >= bot * 0.995:
+                    bull += weight
+                    reasons.append(f"Bullish {label} {bot}–{top} → price at/above demand zone")
+        return bull - bear, reasons
+
+    ob_score = 0.0
+    ob_reasons: list[str] = []
+
+    s1, r1 = _score_zones(chart_data.get("large_fvgs", []), "large FVG", 20)
+    s2, r2 = _score_zones(chart_data.get("fvgs", []),       "FVG",       15)
+    s3, r3 = _score_zones(chart_data.get("order_blocks", []), "OB",       10)
+    ob_reasons = r1 + r2 + r3
+
+    ob_score = max(-20, min(20, s1 + s2 + s3))
+
+    if ob_reasons:
+        for r in ob_reasons[:3]:  # cap to 3 lines
+            reasoning.append(f"POI: {r}")
+    elif ob_score > 0:
+        reasoning.append("POI: Bullish FVG/OB confluence detected")
+    elif ob_score < 0:
+        reasoning.append("POI: Bearish FVG/OB confluence detected")
+    else:
+        reasoning.append("POI: No price-relevant FVG/OB signals at current level")
 
     score += ob_score
     breakdown["fvg_ob"] = ob_score

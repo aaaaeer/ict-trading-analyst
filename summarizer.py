@@ -4,17 +4,17 @@ import json
 import re
 import anthropic
 
-ICT_TF_STACK = ["1W", "1D", "4H", "1H", "15M", "5M", "1M"]
+# Ordered from most to least impactful for ICT analysis
+_KEY_TFS   = ["1D", "4H", "1H", "15M", "5M"]   # must-have for a solid read
+_EXTRA_TFS = ["1W", "1M"]                        # nice-to-have, rarely critical
 
 
-def _detect_missing_timeframes(timeframes: list[str]) -> list[str]:
-    """Return ICT timeframes not present in the current analysis."""
+def _detect_missing_timeframes(timeframes: list[str]) -> tuple[list[str], list[str]]:
+    """Return (key_missing, extra_missing) timeframes not present in the analysis."""
     present = {tf.upper().strip() for tf in timeframes}
-    missing = []
-    for tf in ICT_TF_STACK:
-        if tf not in present:
-            missing.append(tf)
-    return missing
+    key_missing   = [tf for tf in _KEY_TFS   if tf not in present]
+    extra_missing = [tf for tf in _EXTRA_TFS if tf not in present]
+    return key_missing, extra_missing
 
 
 def generate_summary(
@@ -35,7 +35,9 @@ def generate_summary(
         if charts
         else [str(chart_data.get("timeframe", "unknown"))]
     )
-    missing_tfs = _detect_missing_timeframes(timeframes_present)
+    key_missing, extra_missing = _detect_missing_timeframes(timeframes_present)
+    # Only flag timeframes as missing if the important ones aren't covered
+    tf_coverage_ok = len(key_missing) == 0
 
     context = {
         "asset": market_data.get("ticker", "Unknown"),
@@ -43,7 +45,8 @@ def generate_summary(
         "pdh": market_data.get("pdh"),
         "pdl": market_data.get("pdl"),
         "timeframes_analysed": timeframes_present,
-        "missing_ict_timeframes": missing_tfs,
+        "key_timeframes_missing": key_missing,
+        "tf_coverage_complete": tf_coverage_ok,
         "htf_bias": chart_data.get("htf_bias", ""),
         "ltf_bias": chart_data.get("ltf_bias", ""),
         "structure": chart_data.get("structure", ""),
@@ -80,12 +83,12 @@ Your job is to write two things:
    - Be direct. No padding. Write as a professional analyst would in a trading journal.
 
 2. SUGGESTIONS (2-5 bullet points):
-   - What additional chart timeframes would strengthen or challenge this bias (reference the missing ICT stack: {missing_tfs}).
-   - Which specific timeframe to add FIRST and why (e.g. "Add 4H to confirm HTF bias before trusting the 15M entry").
-   - Whether the current confluence is strong or weak, and what would fix it.
+   {"- Timeframe coverage is COMPLETE — do NOT suggest adding more timeframe charts. Focus suggestions on other areas." if tf_coverage_ok else f"- Key timeframes missing: {key_missing}. Suggest which one to add FIRST and why (e.g. 'Add 4H to confirm HTF bias before trusting the 15M entry')."}
+   - Whether the current confluence is strong or weak, and what would make it stronger.
    - Any data quality issues (failed sources, no news, missing PDH/PDL).
+   - Any specific price levels or conditions to watch before entering.
    - Any manual checks the trader should do before acting on this signal.
-   Keep each suggestion to one sentence. Be specific, not generic.
+   Keep each suggestion to one sentence. Be specific, not generic. Do NOT pad with generic advice.
 
 Return ONLY valid JSON — no markdown, no extra text:
 {{

@@ -23,17 +23,64 @@ def _pip_diff(a: float | None, b: float | None, asset: str = "") -> str:
     return f"  ({pips:.1f} pips)"
 
 
+def print_confluences(zones: list[dict], asset: str = "") -> None:
+    if not zones:
+        return
+
+    dp = 3 if "JPY" in asset.upper() else 5
+
+    ct = Table(box=box.SIMPLE, show_header=True, padding=(0, 1))
+    ct.add_column("Zone",      style="bold white",  no_wrap=True)
+    ct.add_column("Direction", style="white",        no_wrap=True)
+    ct.add_column("Position",  style="dim",          no_wrap=True)
+    ct.add_column("Signals",   style="white")
+    ct.add_column("Strength",  style="yellow",       no_wrap=True)
+
+    pos_labels = {
+        "at_price":    "[bold yellow]● AT PRICE[/bold yellow]",
+        "above_price": "▲ Above",
+        "below_price": "▼ Below",
+    }
+
+    for z in zones[:8]:
+        d = z["direction"]
+        color = "green" if d == "bullish" else "red"
+        pos = pos_labels.get(z["position"], z["position"])
+        signals_str = " · ".join(z["signals"])
+        ct.add_row(
+            f"[{color}]{z['bottom']:.{dp}f} – {z['top']:.{dp}f}[/{color}]",
+            f"[{color}]{d.upper()}[/{color}]",
+            pos,
+            signals_str[:55],
+            z["stars"],
+        )
+
+    console.print(Panel(ct, title="[bold]CONFLUENCES[/bold]", border_style="magenta"))
+
+
 def print_trade_setup(trade: dict, asset: str = "") -> None:
     direction = trade.get("direction", "NEUTRAL")
-    if direction == "NEUTRAL":
+    action    = trade.get("action", "NO_TRADE")
+
+    # ── Confluences ──────────────────────────────────────────────────────────
+    zones = trade.get("confluence_zones", [])
+    if zones:
+        print_confluences(zones, asset)
+
+    if direction == "NEUTRAL" or action == "NO_TRADE":
         console.print(Panel(
             f"\n  {trade.get('notes', 'No trade — neutral bias.')}\n",
-            title="[bold]TRADE SETUP[/bold]",
+            title="[bold]TRADE DECISION[/bold]",
             border_style="yellow",
         ))
         return
 
     dir_color = "green" if direction == "BULLISH" else "red"
+    action_colors = {"ENTER_NOW": "bold green", "LIMIT_ORDER": "bold cyan", "WAIT_REVERSAL": "bold yellow"}
+    action_icons  = {"ENTER_NOW": "⚡ ENTER NOW", "LIMIT_ORDER": "⏳ SET LIMIT ORDER", "WAIT_REVERSAL": "👁  WAIT — NO ENTRY YET"}
+    action_label  = action_icons.get(action, action)
+    action_color  = action_colors.get(action, "white")
+
     entry = trade.get("entry")
     sl    = trade.get("sl")
     tp1   = trade.get("tp1")
@@ -41,54 +88,62 @@ def print_trade_setup(trade: dict, asset: str = "") -> None:
     rr1   = trade.get("rr1")
     rr2   = trade.get("rr2")
 
-    # Decimal places: JPY pairs use 3, others use 5
     dp = 3 if "JPY" in asset.upper() else 5
 
     def p(v):
-        return f"{v:.{dp}f}" if v is not None else "N/A"
+        return f"{v:.{dp}f}" if v is not None else "—"
+
+    # Action banner
+    action_reason    = trade.get("action_reason", "")
+    wait_for         = trade.get("wait_for", "")
+    trade_time       = trade.get("trade_time", "")
+    trade_time_reason= trade.get("trade_time_reason", "")
+
+    banner_lines = [f"\n  [{action_color}]{action_label}[/{action_color}]"]
+    if action_reason:
+        banner_lines.append(f"  {action_reason}")
+    if action == "WAIT_REVERSAL" and wait_for:
+        banner_lines.append(f"\n  [yellow]Waiting for:[/yellow] {wait_for}")
+    if trade_time:
+        banner_lines.append(f"\n  [bold white]🕐 Best timing:[/bold white] {trade_time}")
+    if trade_time_reason:
+        banner_lines.append(f"  [dim]{trade_time_reason}[/dim]")
+    console.print(Panel("\n".join(banner_lines) + "\n", title="[bold]TRADE DECISION[/bold]", border_style=action_color.replace("bold ", "")))
+
+    if action == "WAIT_REVERSAL" and not entry:
+        invalidation = trade.get("invalidation", "N/A")
+        lines = [f"\n  [dim]Invalidation:[/dim] {invalidation}"]
+        if trade.get("trade_time"):
+            lines.append(f"  [bold white]🕐 Watch at:[/bold white] {trade['trade_time']}")
+        console.print(Panel(
+            "\n".join(lines) + "\n",
+            title="[bold]INVALIDATION[/bold]", border_style="dim",
+        ))
+        console.print("[bold red]  ⚠  Informational only. Apply your own risk management.[/bold red]\n")
+        return
 
     t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
     t.add_column("Label", style="cyan", no_wrap=True)
     t.add_column("Price", style="bold white")
     t.add_column("Detail", style="dim")
 
-    t.add_row(
-        "Direction",
-        f"[{dir_color}]{'🟢' if direction=='BULLISH' else '🔴'} {direction}[/{dir_color}]",
-        "",
-    )
-    t.add_row("Entry", p(entry), "")
-    t.add_row(
-        "[red]Stop Loss[/red]",
-        f"[red]{p(sl)}[/red]",
-        f"[dim]{_pip_diff(entry, sl, asset)}[/dim]",
-    )
-    t.add_row(
-        "[green]TP 1[/green]",
-        f"[green]{p(tp1)}[/green]",
-        f"[dim]RR {rr1:.1f}:1{_pip_diff(entry, tp1, asset)}[/dim]" if rr1 else "",
-    )
-    t.add_row(
-        "[green]TP 2[/green]",
-        f"[green]{p(tp2)}[/green]",
-        f"[dim]RR {rr2:.1f}:1{_pip_diff(entry, tp2, asset)}[/dim]" if rr2 else "",
-    )
+    t.add_row("Entry", p(entry), "[dim]limit[/dim]" if action == "LIMIT_ORDER" else "[dim]market/stop[/dim]")
+    t.add_row("[red]Stop Loss[/red]",  f"[red]{p(sl)}[/red]",   f"[dim]{_pip_diff(entry, sl, asset)}[/dim]")
+    t.add_row("[green]TP 1[/green]",   f"[green]{p(tp1)}[/green]", f"[dim]RR {rr1:.1f}:1{_pip_diff(entry, tp1, asset)}[/dim]" if rr1 else "")
+    t.add_row("[green]TP 2[/green]",   f"[green]{p(tp2)}[/green]", f"[dim]RR {rr2:.1f}:1{_pip_diff(entry, tp2, asset)}[/dim]" if rr2 else "")
     t.add_row("Invalidation", str(trade.get("invalidation", "N/A")), "")
+
+    console.print(Panel(t, title=f"[bold]LEVELS[/bold]", border_style=dir_color))
 
     notes_lines = []
     for label, key in [("Entry", "entry_notes"), ("SL", "sl_notes"), ("Targets", "tp_notes")]:
         val = trade.get(key, "")
         if val:
             notes_lines.append(f"  [cyan]{label}:[/cyan] {val}")
+    if notes_lines:
+        console.print(Panel("\n".join(notes_lines), title="[bold]SETUP NOTES[/bold]", border_style="dim " + dir_color))
 
-    body = "\n".join(notes_lines)
-
-    console.print(Panel(t, title=f"[bold]TRADE SETUP — ICT[/bold]", border_style=dir_color))
-    if body:
-        console.print(Panel(body, title="[bold]SETUP NOTES[/bold]", border_style="dim " + dir_color))
-    console.print(
-        "[bold red]  ⚠  These levels are for informational purposes only. Apply your own risk management.[/bold red]\n"
-    )
+    console.print("[bold red]  ⚠  Informational only. Apply your own risk management.[/bold red]\n")
 
 
 def print_report(
@@ -202,8 +257,9 @@ def print_report(
 
     c.add_row("Structure", str(chart_data.get("structure", "N/A")))
     c.add_row("Trend", str(chart_data.get("trend", "N/A")))
-    c.add_row("FVGs", str(chart_data.get("fvgs", "None")) or "None")
-    c.add_row("Order Blocks", str(chart_data.get("order_blocks", "None")) or "None")
+    c.add_row("FVGs (red boxes)", str(chart_data.get("fvgs", "None")) or "None")
+    c.add_row("Large FVGs (blue boxes)", str(chart_data.get("large_fvgs", "None")) or "None")
+    c.add_row("Order Blocks (small blue)", str(chart_data.get("order_blocks", "None")) or "None")
     c.add_row("Liquidity", str(chart_data.get("liquidity", "N/A")))
     c.add_row("POI Levels", str(chart_data.get("poi_levels", "None")) or "None")
     c.add_row("Killzone", str(chart_data.get("killzone", "N/A")))
