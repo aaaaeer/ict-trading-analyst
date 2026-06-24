@@ -1,29 +1,38 @@
 import json
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import anthropic
 
 
+_TZ_BG = ZoneInfo("Europe/Sofia")
+
 _SESSIONS = [
-    ("Asian session",           0,  0,  5,  0),   # 00:00–05:00 UTC
-    ("London Open Kill Zone",   7,  0, 10,  0),   # 07:00–10:00 UTC
-    ("New York Open Kill Zone", 12, 0, 15,  0),   # 12:00–15:00 UTC
-    ("London Close",            15, 0, 16,  0),   # 15:00–16:00 UTC
-    ("NY Close / Dead Zone",    16, 0, 23, 59),   # 16:00–midnight UTC
+    ("Asian session",            0,  0,  5,  0),  # 00:00–05:00 UTC
+    ("London Open Kill Zone",    7,  0, 10,  0),  # 07:00–10:00 UTC
+    ("New York Open Kill Zone", 12,  0, 15,  0),  # 12:00–15:00 UTC
+    ("London Close",            15,  0, 16,  0),  # 15:00–16:00 UTC
+    ("NY Close / Dead Zone",    16,  0, 23, 59),  # 16:00–midnight UTC
 ]
 
-# Bulgaria is UTC+3 in summer (EEST), UTC+2 in winter (EET)
-_BULGARIA_OFFSET = 3  # EEST (May–Oct)
+
+def _utc_to_bg(h_utc: int, m_utc: int) -> str:
+    """Convert a UTC HH:MM to a Bulgaria local time string, respecting DST."""
+    # Use today's date so DST is resolved correctly
+    now_bg = datetime.now(_TZ_BG)
+    offset_hours = int(now_bg.utcoffset().total_seconds() // 3600)
+    bg_h = (h_utc + offset_hours) % 24
+    return f"{bg_h:02d}:{m_utc:02d}"
 
 
 def _session_context() -> str:
     """Return current UTC + Bulgaria time, and which killzones are active / upcoming."""
     now_utc = datetime.now(timezone.utc)
-    h_utc = now_utc.hour + now_utc.minute / 60  # decimal hours UTC
+    now_bg  = datetime.now(_TZ_BG)
+    h_utc   = now_utc.hour + now_utc.minute / 60
 
-    bg_hour = (now_utc.hour + _BULGARIA_OFFSET) % 24
-    bg_min  = now_utc.minute
-    bg_time = f"{bg_hour:02d}:{bg_min:02d}"
+    offset_h = int(now_bg.utcoffset().total_seconds() // 3600)
+    tz_label = now_bg.strftime("%Z")  # e.g. "EEST" or "EET"
 
     active, upcoming, passed = [], [], []
     for name, sh, sm, eh, em in _SESSIONS:
@@ -37,14 +46,12 @@ def _session_context() -> str:
             passed.append((name, sh, sm, eh, em))
 
     def fmt(name, sh, sm, eh, em):
-        bg_s = (sh + _BULGARIA_OFFSET) % 24
-        bg_e = (eh + _BULGARIA_OFFSET) % 24
         return (f"{name} "
                 f"[UTC {sh:02d}:{sm:02d}–{eh:02d}:{em:02d} | "
-                f"Bulgaria {bg_s:02d}:{sm:02d}–{bg_e:02d}:{em:02d}]")
+                f"Bulgaria {_utc_to_bg(sh, sm)}–{_utc_to_bg(eh, em)}]")
 
     lines = [
-        f"Current time: {now_utc.strftime('%H:%M')} UTC  /  {bg_time} Bulgaria (UTC+3)",
+        f"Current time: {now_utc.strftime('%H:%M')} UTC  /  {now_bg.strftime('%H:%M')} Bulgaria ({tz_label}, UTC+{offset_h})",
         f"Day: {now_utc.strftime('%A')}",
     ]
     if active:
@@ -55,10 +62,10 @@ def _session_context() -> str:
         lines.append("Already finished today: " + ", ".join(fmt(*s) for s in passed))
     lines.append("")
     lines.append("RULES FOR trade_time field:")
-    lines.append("- If a session is CURRENTLY ACTIVE, say 'NOW — <session name> is open until HH:MM Bulgaria'")
-    lines.append("- If a session is upcoming, give the Bulgaria start time")
-    lines.append("- NEVER mention a session that is already finished today")
-    lines.append("- If all killzones for today are done, say 'No killzone remaining today — wait for Asian session tomorrow'")
+    lines.append("- If a session is CURRENTLY ACTIVE, say 'NOW — <session> open until HH:MM Bulgaria'")
+    lines.append("- If upcoming, give the Bulgaria start time")
+    lines.append("- NEVER mention a session already listed as finished today")
+    lines.append("- If all killzones done, say 'No killzone today — Asian session tomorrow at 03:00 Bulgaria'")
     return "\n".join(lines)
 
 
