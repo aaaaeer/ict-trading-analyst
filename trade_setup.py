@@ -195,74 +195,90 @@ def generate_trade_setup(
         "per_chart":        chart_data.get("charts", []),
     }
 
-    prompt = f"""You are a precise ICT (Inner Circle Trader) trade planner.
+    is_jpy = "JPY" in str(market_data.get("ticker", "")).upper()
+    pip      = 0.01  if is_jpy else 0.0001
+    max_sl   = 30    if is_jpy else 30     # pips
+    max_tp1  = 60    if is_jpy else 60     # pips
+    max_tp2  = 150   if is_jpy else 150    # pips
+    max_entry_dist = 40 if is_jpy else 30  # pips — beyond this use WAIT_REVERSAL
 
---- SESSION / TIME CONTEXT ---
+    prompt = f"""You are an ICT (Inner Circle Trader) INTRADAY / DAY TRADING analyst.
+This is a SHORT-TERM setup tool. You are looking for moves of 20–150 pips maximum, completed within 1–2 trading sessions.
+You are NOT doing swing trading. You are NOT targeting multi-day or multi-week moves.
+
+--- THIS SESSION ---
 {_session_context()}
 
-Analysis data:
+--- ASSET & PRICE ---
+Asset: {market_data.get("ticker", "")}  |  Current price: {current}
+Pip size: {pip}  (1 pip = {pip})
+
+--- ANALYSIS DATA ---
 {json.dumps(context, indent=2)}
 
 Overall direction: {direction}
-Current price: {current}
 
 ---
---- ENTRY DISTANCE RULES ---
-Asset: {market_data.get("ticker", "")}
-Current price: {current}
-Max reasonable LIMIT_ORDER distance from current price:
-  - JPY pairs (e.g. GBPJPY): 40 pips = 0.40 price units
-  - Other pairs: 30 pips = 0.0030 price units
-If the nearest valid entry zone is FURTHER than the max distance above, use WAIT_REVERSAL instead of LIMIT_ORDER — the retracement is too large to set a passive order. State what price action would bring it into range.
+=== HARD LIMITS — INTRADAY DAY TRADING ONLY ===
+{"JPY pair rules:" if is_jpy else "Non-JPY pair rules:"}
+  Stop Loss:  MAX {max_sl} pips ({max_sl * pip:.3f} price units) — tight, behind nearest OB/FVG edge or swing point
+  TP1:        MAX {max_tp1} pips ({max_tp1 * pip:.3f}) — target nearest INTRADAY liquidity: session high/low, equal highs/lows, OB/FVG on the same day
+  TP2:        MAX {max_tp2} pips ({max_tp2 * pip:.3f}) — target PDH, PDL, or opposite session extreme
+  Entry zone: MAX {max_entry_dist} pips ({max_entry_dist * pip:.3f}) from current price for LIMIT_ORDER
+
+DO NOT target swing highs/lows from days or weeks ago.
+DO NOT set SL wider than {max_sl} pips.
+DO NOT set TP further than {max_tp2} pips.
+If no intraday target exists within {max_tp2} pips, use WAIT_REVERSAL and explain what needs to happen first.
+
+Liquidity targets to look for (in order of priority):
+  1. Equal highs / equal lows visible on the 5M or 15M chart (within 50–80 pips)
+  2. Current session high or low (London H/L, NY H/L, Asia H/L marked on chart)
+  3. PDH or PDL (previous day high/low — 1 day ago only)
+  These are the ICT day trade targets. Nothing beyond these.
 
 ---
-DECISION — choose ONE of these three actions:
+=== DECISION ===
+Choose ONE:
 
-A) ENTER_NOW — price is currently AT or INSIDE a high-confluence ICT zone (OB/FVG) aligned with bias.
-
-B) LIMIT_ORDER — price has NOT reached the zone yet, but the zone is within {40 if "JPY" in str(market_data.get("ticker","")).upper() else 30} pips.
-   Entry = zone top (bearish) or zone bottom (bullish).
-
-C) WAIT_REVERSAL — no nearby zone, zone is too far (>40 pips JPY / >30 pips other), or LTF structure unconfirmed.
-   Describe exactly what price action must happen before an entry is valid.
+A) ENTER_NOW — price is AT or INSIDE a high-confluence OB/FVG right now.
+B) LIMIT_ORDER — valid zone is within {max_entry_dist} pips. Entry = zone edge (top for bearish, bottom for bullish).
+C) WAIT_REVERSAL — zone is too far, or LTF (5M/15M) structure not yet confirmed.
+   State exactly what must happen: e.g. "Wait for 5M CHoCH bearish and 5M FVG fill below 195.30".
 
 ---
-TRADE PLAN:
-
+=== TRADE PLAN ===
 ENTRY — exact price
-STOP LOSS
-  - Bearish: above OB/FVG top or recent swing high
-  - Bullish: below OB/FVG bottom or recent swing low
-TP1 — nearest liquidity (1:1–1:3 RR)
-TP2 — major draw on liquidity (PDH/PDL, session high/low, equal highs/lows)
+STOP LOSS — beyond OB/FVG edge or 5M swing point. MAX {max_sl} pips from entry.
+TP1 — nearest intraday liquidity, MAX {max_tp1} pips from entry.
+TP2 — next intraday draw, MAX {max_tp2} pips from entry.
 
-TIMING — use the SESSION / TIME CONTEXT above to determine trade_time:
-  - If a session IS CURRENTLY ACTIVE → say "NOW — <session> open until HH:MM Bulgaria"
-  - If the next killzone is upcoming → give its Bulgaria start time
-  - Do NOT mention any session already listed as "Already finished today"
-  - If no killzone remains today → say "No killzone today — Asia opens tomorrow at 03:00 Bulgaria"
+TIMING:
+  - If a session IS CURRENTLY ACTIVE → "NOW — <session> open until HH:MM Bulgaria"
+  - If upcoming → give Bulgaria start time
+  - Never mention a session already listed as finished today
 
 Rules:
 - All prices must be exact numbers
 - Bearish: SL > entry > TP1 > TP2
 - Bullish: SL < entry < TP1 < TP2
-- JPY pairs: 3 decimal places; others: 5
+- JPY: 3 decimal places; others: 5
 - RR = abs(entry - tp) / abs(entry - sl), rounded to 1dp
 
 Return ONLY valid JSON — no other text:
 {{
   "action": "ENTER_NOW|LIMIT_ORDER|WAIT_REVERSAL",
-  "action_reason": "<1 sentence explaining the action choice>",
-  "wait_for": "<null or what to wait for if WAIT_REVERSAL>",
-  "trade_time": "<e.g. 'NOW — NY Open Kill Zone open until 18:00 Bulgaria' or 'London Close opens 18:00 Bulgaria'>",
-  "trade_time_reason": "<1 sentence why this session suits this setup>",
-  "entry": <number or null if WAIT_REVERSAL>,
-  "sl": <number or null if WAIT_REVERSAL>,
-  "tp1": <number or null if WAIT_REVERSAL>,
-  "tp2": <number or null if WAIT_REVERSAL>,
+  "action_reason": "<1 sentence>",
+  "wait_for": "<null or condition to wait for>",
+  "trade_time": "<e.g. 'NOW — NY Open Kill Zone open until 18:00 Bulgaria'>",
+  "trade_time_reason": "<1 sentence>",
+  "entry": <number or null>,
+  "sl": <number or null>,
+  "tp1": <number or null>,
+  "tp2": <number or null>,
   "rr1": <number or null>,
   "rr2": <number or null>,
-  "invalidation": "<price that kills the thesis>",
+  "invalidation": "<price level>",
   "entry_notes": "<1 sentence>",
   "sl_notes": "<1 sentence>",
   "tp_notes": "<1 sentence>"

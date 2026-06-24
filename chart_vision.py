@@ -62,7 +62,10 @@ If a price label is visible on or near the box/line, record it exactly.
 If no label is visible, estimate from the Y-axis.
 """
 
-SINGLE_PROMPT = """You are an expert ICT (Inner Circle Trader) technical analyst with precise visual reading ability.
+SINGLE_PROMPT = """You are an expert ICT (Inner Circle Trader) INTRADAY analyst with precise visual reading ability.
+You are analysing for DAY TRADING setups — moves of 20–150 pips within a single trading session.
+Focus on: 5M/15M entries, OBs and FVGs visible on the current chart, intraday liquidity (session highs/lows, equal highs/lows), and same-day structure shifts (CHoCH/BOS).
+Ignore multi-week trends. Identify what is happening TODAY in the current session.
 
 """ + VISUAL_LEGEND + """
 
@@ -82,7 +85,11 @@ Return ONLY valid JSON, no other text, matching this structure exactly:
   "poi_levels": ["195.40", "194.80"]
 }"""
 
-MULTI_PROMPT = """You are an expert ICT (Inner Circle Trader) technical analyst performing multi-timeframe analysis.
+MULTI_PROMPT = """You are an expert ICT (Inner Circle Trader) INTRADAY analyst performing multi-timeframe analysis for DAY TRADING.
+You are looking for setups that complete within 1–2 trading sessions (20–150 pip moves).
+Use the higher timeframes (1D/4H/1H) ONLY for directional bias. All actual entry signals come from the lower timeframes (15M/5M).
+Focus on: current session OBs/FVGs, intraday CHoCH/BOS, same-day liquidity (session highs/lows, equal highs/lows).
+Do NOT focus on multi-week swing levels or targets more than 150 pips away.
 You have been given {n} trading chart screenshots. Treat them in order — Chart 1 is the highest timeframe, last is lowest.
 
 """ + VISUAL_LEGEND + """
@@ -94,7 +101,7 @@ For EACH chart, carefully identify every visual element using the legend above a
   fvgs: list of red boxes — [{{"direction": "bearish", "top": <price>, "bottom": <price>}}],
   large_fvgs: list of large blue boxes with midline — [{{"direction": "bullish|bearish", "top": <price>, "midline": <price>, "bottom": <price>}}],
   order_blocks: list of small blue boxes — [{{"direction": "bullish|bearish", "top": <price>, "bottom": <price>}}],
-  liquidity: description of BSL/SSL, equal highs/lows, and any session high/low reference labels visible (e.g. "London H 215.50, Asia L 213.80"),
+  liquidity: focus on INTRADAY liquidity — equal highs/lows within 50–100 pips, session high/low labels (e.g. "London H 215.50, Asia L 213.80"), BSL/SSL that could be swept this session,
   trend: bullish|bearish|ranging,
   killzone: London|NY|Asia|none — based on visible candle activity, NOT session label boxes,
   poi_levels: list of key price levels as strings
