@@ -305,11 +305,13 @@ def print_report(
     bt.add_column("Weight", justify="right", style="dim")
 
     for name, key, weight in [
-        ("HTF Structure",     "htf_structure", "30%"),
-        ("Liquidity",         "liquidity",     "25%"),
-        ("FVG / Order Block", "fvg_ob",        "20%"),
-        ("PDH / PDL",         "pdh_pdl",       "10%"),
-        ("News Sentiment",    "news",          "10%"),
+        ("HTF Structure",       "htf_structure",    "25%"),
+        ("Draw on Liquidity",   "draw_on_liquidity","25%"),
+        ("Premium / Discount",  "premium_discount", "15%"),
+        ("FVG / OB at POI",     "fvg_ob",           "15%"),
+        ("LTF Confirmation",    "ltf_confirmation", "10%"),
+        ("PDH / PDL",           "pdh_pdl",           "5%"),
+        ("News Sentiment",      "news",              "5%"),
     ]:
         val = bd.get(key, 0)
         color = "green" if val > 0 else "red" if val < 0 else "white"

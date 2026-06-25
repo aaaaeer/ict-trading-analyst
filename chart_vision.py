@@ -23,28 +23,36 @@ VISUAL_LEGEND = """
 CHART VISUAL LEGEND — read these elements exactly as drawn:
 
 1. RED FILLED BOXES → FVG (Fair Value Gap)
-   - A red shaded/filled rectangle on the chart = a bearish FVG (imbalance to the downside)
-   - Read the top and bottom price of the box as the FVG range
-   - These are areas price may return to fill before continuing down
+   - A red shaded/filled rectangle = a Fair Value Gap (price imbalance area)
+   - IMPORTANT: The red colour is just the indicator's display colour. It does NOT mean the FVG is bearish.
+   - Determine the FVG direction from CONTEXT:
+       * If the box is ABOVE current price → bearish FVG (supply imbalance, price may react DOWN from here)
+       * If the box is BELOW current price → bullish FVG (demand imbalance, price may bounce UP from here)
+       * If price is INSIDE the box → actively being filled (note this)
+   - Read the top and bottom price of each box from the Y-axis
 
 2. GREEN AND RED LINES → Market Structure (CHoCH / BOS)
-   - A labelled line marked "CHoCH" (Change of Character) = structure shift, potential trend reversal
+   - A labelled line marked "CHoCH" (Change of Character) = structure shift / trend reversal signal
    - A labelled line marked "BOS" (Break of Structure) = trend continuation confirmation
-   - Green CHoCH/BOS line = bullish structure break
-   - Red CHoCH/BOS line = bearish structure break
-   - Read the price level of the line and whether it is bullish or bearish
+   - GREEN line = bullish structure event (price broke upward)
+   - RED line = bearish structure event (price broke downward)
+   - Read the label text AND the colour to determine direction
+   - Read the exact price level of each line
 
 3. SMALL BLUE BOXES → Order Blocks (OB)
-   - Small blue shaded rectangles = order blocks
-   - If the box is below current price = bullish OB (demand zone, potential support)
-   - If the box is above current price = bearish OB (supply zone, potential resistance)
-   - Read the price range of each box
+   - Small blue shaded rectangles = order blocks (last OB before a significant move)
+   - Determine direction from position:
+       * Below current price → bullish OB (demand zone, expect price to bounce UP)
+       * Above current price → bearish OB (supply zone, expect price to reject DOWN)
+   - Read the top and bottom price of each box
 
 4. LARGE BLUE BOXES WITH A HORIZONTAL LINE THROUGH THE MIDDLE → Large FVG
-   - A large blue rectangle with a midline = a significant Fair Value Gap (bigger imbalance)
-   - The midline = the 50% equilibrium of the FVG (key magnetic level)
-   - These act as major draw-on-liquidity targets
-   - Read the top, midline, and bottom price of the box
+   - A large blue rectangle with a visible midline = a significant Fair Value Gap
+   - The midline = the 50% equilibrium level (strong magnetic draw)
+   - Determine direction the same way as small FVGs: position relative to current price
+       * Above price → bearish large FVG (resistance / supply)
+       * Below price → bullish large FVG (support / demand)
+   - Read the top, midline, and bottom prices
 
 5. SESSION LABELS / BOXES (London, NY, Asia, "L H", "L L", "NY H", "NY L") → Session High/Low reference levels
    - These boxes or horizontal lines labelled with session names mark the HIGH and LOW of a PAST session
@@ -69,20 +77,28 @@ Ignore multi-week trends. Identify what is happening TODAY in the current sessio
 
 """ + VISUAL_LEGEND + """
 
-Analyse this trading chart screenshot and extract every visible element using the legend above.
+Analyse this chart using the ICT framework:
+1. What is the STRUCTURE? (HH+HL = bullish, LH+LL = bearish, note the most recent CHoCH/BOS)
+2. Is price in PREMIUM (above range midpoint = sell area) or DISCOUNT (below midpoint = buy area)?
+3. What is the DRAW ON LIQUIDITY — where is price most likely heading? (Equal highs/BSL above = bullish draw, equal lows/SSL below = bearish draw)
+4. What OBs and FVGs are at relevant levels for an entry?
+5. Has there been a DISPLACEMENT (strong impulsive move) that created a POI?
 
 Return ONLY valid JSON, no other text, matching this structure exactly:
 {
   "asset": "ticker if visible or null",
   "timeframe": "e.g. 1H or 15M",
-  "structure": "HH+HL bullish | LH+LL bearish | mixed — include CHoCH/BOS direction and price level if visible",
+  "structure": "HH+HL bullish | LH+LL bearish | mixed — include the most recent CHoCH/BOS label and price",
   "trend": "bullish|bearish|ranging",
-  "fvgs": [{"direction": "bearish", "top": 0.0, "bottom": 0.0}],
+  "premium_discount": "premium|discount|equilibrium",
+  "draw_on_liquidity": "e.g. 'Equal highs at 215.50 — BSL bullish draw' or 'Session low 213.20 — SSL bearish draw'",
+  "displacement": "e.g. 'Bearish displacement on 15M created FVG at 215.10-215.35' or 'none visible'",
+  "fvgs": [{"direction": "bullish (below price = demand) or bearish (above price = supply)", "top": 0.0, "bottom": 0.0}],
   "large_fvgs": [{"direction": "bullish|bearish", "top": 0.0, "midline": 0.0, "bottom": 0.0}],
-  "order_blocks": [{"direction": "bullish|bearish", "top": 0.0, "bottom": 0.0}],
-  "liquidity": "describe equal highs/lows, BSL/SSL, and any visible session high/low labels (e.g. London H at 215.50, Asia L at 213.80)",
-  "killzone": "London|NY|Asia|none — based on visible candle activity, NOT session label boxes",
-  "poi_levels": ["195.40", "194.80"]
+  "order_blocks": [{"direction": "bullish (below price) or bearish (above price)", "top": 0.0, "bottom": 0.0}],
+  "liquidity": "list ALL visible session H/L labels and equal highs/lows with exact prices",
+  "killzone": "London|NY|Asia|none — based on candle activity patterns, NOT session label boxes",
+  "poi_levels": ["list price levels of key OBs and FVGs"]
 }"""
 
 MULTI_PROMPT = """You are an expert ICT (Inner Circle Trader) INTRADAY analyst performing multi-timeframe analysis for DAY TRADING.
@@ -94,23 +110,33 @@ You have been given {n} trading chart screenshots. Treat them in order — Chart
 
 """ + VISUAL_LEGEND + """
 
-For EACH chart, carefully identify every visual element using the legend above and extract:
+For EACH chart apply the ICT framework — answer these in order:
+  1. What is the STRUCTURE? (HH+HL bullish | LH+LL bearish — note most recent CHoCH/BOS label and price)
+  2. Is price in PREMIUM (above range midpoint) or DISCOUNT (below midpoint)?
+  3. What is the DRAW ON LIQUIDITY this session? (Equal highs/BSL above = bullish draw, equal lows/SSL below = bearish draw)
+  4. What OBs/FVGs exist? Classify by POSITION relative to current price (above price = bearish/supply, below = bullish/demand)
+  5. Any DISPLACEMENT move visible? (Strong impulsive candle creating FVG/OB)
 
-  asset, timeframe (identify or estimate: 1W/1D/4H/1H/15M/5M/1M),
-  structure: string — "HH+HL bullish | LH+LL bearish | mixed" — include CHoCH/BOS direction and level if visible,
-  fvgs: list of red boxes — [{{"direction": "bearish", "top": <price>, "bottom": <price>}}],
-  large_fvgs: list of large blue boxes with midline — [{{"direction": "bullish|bearish", "top": <price>, "midline": <price>, "bottom": <price>}}],
-  order_blocks: list of small blue boxes — [{{"direction": "bullish|bearish", "top": <price>, "bottom": <price>}}],
-  liquidity: focus on INTRADAY liquidity — equal highs/lows within 50–100 pips, session high/low labels (e.g. "London H 215.50, Asia L 213.80"), BSL/SSL that could be swept this session,
+Per-chart fields to extract:
+  asset, timeframe (1W/1D/4H/1H/15M/5M/1M),
+  structure: "HH+HL bullish" | "LH+LL bearish" | "mixed" — include most recent CHoCH/BOS,
   trend: bullish|bearish|ranging,
-  killzone: London|NY|Asia|none — based on visible candle activity, NOT session label boxes,
-  poi_levels: list of key price levels as strings
+  premium_discount: premium|discount|equilibrium,
+  draw_on_liquidity: string describing the target (e.g. "Equal lows 213.20 — SSL bearish draw"),
+  displacement: string describing any recent strong impulsive move,
+  fvgs: [{{"direction": "bullish (below price) or bearish (above price)", "top": price, "bottom": price}}],
+  large_fvgs: [{{"direction": "bullish|bearish", "top": price, "midline": price, "bottom": price}}],
+  order_blocks: [{{"direction": "bullish (below price) or bearish (above price)", "top": price, "bottom": price}}],
+  liquidity: ALL visible session H/L labels and equal highs/lows with exact prices,
+  killzone: London|NY|Asia|none — from candle activity patterns only,
+  poi_levels: list of key OB/FVG price levels
 
-Then synthesise:
-  htf_bias: overall directional bias from higher timeframes
-  ltf_bias: short-term bias from lower timeframes
-  combined_trend: multi-TF trend description
-  confluence_notes: where timeframes agree or conflict, which OBs/FVGs line up across TFs
+Then synthesise across all timeframes:
+  htf_bias: directional bias from higher TFs (1D/4H) — bullish|bearish|neutral
+  ltf_bias: short-term bias from lower TFs (15M/5M) — bullish|bearish|neutral
+  premium_discount: overall — is price in premium or discount on the HTF?
+  draw_on_liquidity: the main intraday liquidity target price is heading toward
+  confluence_notes: where TFs agree/conflict, which OBs/FVGs stack across timeframes
 
 Return ONLY valid JSON — no extra text:
 {{
@@ -118,9 +144,12 @@ Return ONLY valid JSON — no extra text:
   "timeframe": "multi-timeframe",
   "htf_bias": "bullish|bearish|neutral",
   "ltf_bias": "bullish|bearish|neutral",
+  "premium_discount": "premium|discount|equilibrium",
+  "draw_on_liquidity": "...",
   "combined_trend": "...",
   "confluence_notes": "...",
   "structure": "...",
+  "displacement": "...",
   "fvgs": [],
   "large_fvgs": [],
   "order_blocks": [],
@@ -134,11 +163,14 @@ Return ONLY valid JSON — no extra text:
       "asset": "...",
       "timeframe": "...",
       "structure": "...",
+      "trend": "...",
+      "premium_discount": "...",
+      "draw_on_liquidity": "...",
+      "displacement": "...",
       "fvgs": [],
       "large_fvgs": [],
       "order_blocks": [],
       "liquidity": "...",
-      "trend": "...",
       "killzone": "...",
       "poi_levels": []
     }}
