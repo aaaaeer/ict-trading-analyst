@@ -38,7 +38,7 @@ def get_market_data(ticker: str) -> dict:
             asian_high = float(asian_session["High"].max())
             asian_low = float(asian_session["Low"].min())
 
-        london_mask = (df.index >= day_start.replace(hour=7)) & (df.index < day_start.replace(hour=8))
+        london_mask = (df.index >= day_start.replace(hour=7)) & (df.index < day_start.replace(hour=10))
         london_range = df[london_mask]
         if not london_range.empty:
             london_high = float(london_range["High"].max())

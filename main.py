@@ -49,6 +49,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Derive asset currencies for calendar filtering
+    _TICKER_CURRENCIES = {
+        "GBPJPY=X": ["GBP", "JPY"], "GBPUSD=X": ["GBP", "USD"],
+        "EURUSD=X": ["EUR", "USD"], "USDJPY=X": ["USD", "JPY"],
+        "EURJPY=X": ["EUR", "JPY"], "AUDUSD=X": ["AUD", "USD"],
+        "AUDJPY=X": ["AUD", "JPY"], "NZDUSD=X": ["NZD", "USD"],
+        "USDCAD=X": ["USD", "CAD"], "USDCHF=X": ["USD", "CHF"],
+    }
+    target_currencies = _TICKER_CURRENCIES.get(args.asset.upper(), [])
+
     # Validate all chart files exist
     missing_files = [f for f in args.chart if not os.path.exists(f)]
     if missing_files:
@@ -107,7 +117,7 @@ def main() -> None:
 
             # 4 — Calendar
             from calendar_fetcher import fetch_calendar
-            result, err = _step(p, "Fetching economic calendar…", fetch_calendar)
+            result, err = _step(p, "Fetching economic calendar…", fetch_calendar, target_currencies)
             if result is not None:
                 calendar = result
             else:

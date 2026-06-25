@@ -199,6 +199,7 @@ def print_report(
         mt.add_column("TF", style="cyan bold", no_wrap=True)
         mt.add_column("Structure", style="white")
         mt.add_column("Trend", style="white")
+        mt.add_column("P/D", style="white", no_wrap=True)
         mt.add_column("Liquidity", style="white")
         mt.add_column("FVG / OB", style="white")
 
@@ -206,6 +207,7 @@ def print_report(
             tf = str(ch.get("timeframe", "?"))
             structure = str(ch.get("structure", ""))
             trend = str(ch.get("trend", ""))
+            pd_val = str(ch.get("premium_discount", "")).lower()
             liq = str(ch.get("liquidity", ""))
             fvgs = ch.get("fvgs", [])
             obs = ch.get("order_blocks", [])
@@ -213,6 +215,8 @@ def print_report(
             trend_color = "green" if "bullish" in trend.lower() else "red" if "bearish" in trend.lower() else "yellow"
             struct_color = "green" if any(k in structure.lower() for k in ("hh", "hl", "bullish")) \
                 else "red" if any(k in structure.lower() for k in ("lh", "ll", "bearish")) else "white"
+            pd_color = "green" if "discount" in pd_val else "red" if "premium" in pd_val else "yellow"
+            pd_label = pd_val.capitalize() if pd_val else "N/A"
 
             fvg_ob_parts = []
             fvg_str = str(fvgs).lower()
@@ -231,6 +235,7 @@ def print_report(
                 tf,
                 f"[{struct_color}]{structure[:30]}[/{struct_color}]",
                 f"[{trend_color}]{trend.capitalize()}[/{trend_color}]",
+                f"[{pd_color}]{pd_label}[/{pd_color}]",
                 liq[:35] or "N/A",
                 fvg_ob_str,
             )
@@ -257,6 +262,11 @@ def print_report(
 
     c.add_row("Structure", str(chart_data.get("structure", "N/A")))
     c.add_row("Trend", str(chart_data.get("trend", "N/A")))
+    pd_val = str(chart_data.get("premium_discount", "")).lower()
+    pd_color = "green" if "discount" in pd_val else "red" if "premium" in pd_val else "yellow"
+    c.add_row("Premium / Discount", f"[{pd_color}]{pd_val.capitalize() or 'N/A'}[/{pd_color}]")
+    c.add_row("Draw on Liquidity", str(chart_data.get("draw_on_liquidity", "N/A")))
+    c.add_row("Displacement", str(chart_data.get("displacement", "N/A")))
     c.add_row("FVGs (red boxes)", str(chart_data.get("fvgs", "None")) or "None")
     c.add_row("Large FVGs (blue boxes)", str(chart_data.get("large_fvgs", "None")) or "None")
     c.add_row("Order Blocks (small blue)", str(chart_data.get("order_blocks", "None")) or "None")

@@ -33,7 +33,13 @@ def fetch_calendar(target_currencies: list[str] | None = None) -> dict:
     two_hours_later = now_utc + timedelta(hours=2)
 
     try:
-        feed = feedparser.parse(FOREX_FACTORY_RSS)
+        resp = requests.get(
+            FOREX_FACTORY_RSS,
+            timeout=5,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; RSS reader)"},
+        )
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.content)
         for entry in feed.entries:
             title = entry.get("title", "")
             description = entry.get("description", "")
