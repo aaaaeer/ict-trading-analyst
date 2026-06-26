@@ -123,25 +123,34 @@ def main() -> None:
             else:
                 missing.append(f"Calendar: {err}")
 
-        # 5 — Bias engine
-        from ict_engine import generate_bias
-        result, err = _step(p, "Computing ICT bias…", generate_bias, chart_data, market_data, news, calendar)
-        if result is not None:
-            bias = result
+        # 5 — ICT Analysis (bias + trade plan in one call following the ICT Daily Model)
+        from ict_analysis import generate_ict_analysis
+        analysis_result, err = _step(
+            p, "Running ICT analysis…",
+            generate_ict_analysis, chart_data, market_data, news, calendar,
+        )
+        if analysis_result is not None:
+            bias = {
+                "score":     analysis_result.get("score", 0),
+                "direction": analysis_result.get("direction", "NEUTRAL"),
+                "confidence":analysis_result.get("confidence", "LOW"),
+                "reasoning": analysis_result.get("reasoning", []),
+                "breakdown": analysis_result.get("breakdown", {}),
+            }
+            trade_result = analysis_result
         else:
             bias = {
                 "score": 0, "direction": "NEUTRAL", "confidence": "LOW",
-                "reasoning": [f"Engine error: {err}"], "breakdown": {},
+                "reasoning": [f"ICT analysis error: {err}"], "breakdown": {},
             }
-
-        # 6 — Trade setup (entry / SL / TP)
-        from trade_setup import generate_trade_setup
-        trade_result, err = _step(
-            p, "Calculating entry, SL, and TP levels…",
-            generate_trade_setup, chart_data, market_data, bias,
-        )
-        if trade_result is None:
-            trade_result = {"direction": bias.get("direction", "NEUTRAL"), "error": err}
+            trade_result = {
+                "direction": "NEUTRAL", "action": "NO_TRADE",
+                "ict_model": "No model forming",
+                "ict_narrative": f"Analysis failed: {err}",
+                "ict_checklist": {},
+                "confluence_zones": [],
+                "error": err,
+            }
 
         # 7 — Natural language summary + suggestions
         from summarizer import generate_summary

@@ -23,6 +23,52 @@ def _pip_diff(a: float | None, b: float | None, asset: str = "") -> str:
     return f"  ({pips:.1f} pips)"
 
 
+def print_ict_model(trade: dict) -> None:
+    ict_model     = trade.get("ict_model", "No model forming")
+    daily_bias    = trade.get("daily_bias", "")
+    checklist     = trade.get("ict_checklist", {})
+    narrative     = trade.get("ict_narrative", "")
+
+    # ICT MODEL banner
+    if "Buy" in ict_model:
+        model_color = "green"
+    elif "Sell" in ict_model:
+        model_color = "red"
+    elif "Waiting" in ict_model:
+        model_color = "yellow"
+    else:
+        model_color = "dim"
+
+    model_body = f"\n  [{model_color}]{ict_model}[/{model_color}]\n"
+    if daily_bias:
+        model_body += f"  {daily_bias}\n"
+    console.print(Panel(model_body, title="[bold]ICT MODEL[/bold]", border_style=model_color))
+
+    # ICT CHECKLIST
+    steps = [
+        ("htf_structure",        "HTF Structure confirmed"),
+        ("draw_identified",      "Draw on Liquidity identified"),
+        ("in_premium_discount",  "Price in correct Premium/Discount zone"),
+        ("manipulation_swept",   "Manipulation — liquidity sweep occurred"),
+        ("displacement_visible", "Displacement — FVG/OB created after sweep"),
+        ("ltf_choch_confirmed",  "LTF CHoCH confirmed at entry zone"),
+    ]
+    cl_lines = []
+    for key, label in steps:
+        val = checklist.get(key, False)
+        icon = "[bold green]✓[/bold green]" if val else "[bold red]✗[/bold red]"
+        cl_lines.append(f"  {icon}  {label}")
+    console.print(Panel("\n".join(cl_lines), title="[bold]ICT CHECKLIST[/bold]", border_style="cyan"))
+
+    # ICT NARRATIVE
+    if narrative:
+        console.print(Panel(
+            f"\n  {narrative}\n",
+            title="[bold]ICT NARRATIVE[/bold]",
+            border_style="cyan",
+        ))
+
+
 def print_confluences(zones: list[dict], asset: str = "") -> None:
     if not zones:
         return
@@ -68,8 +114,12 @@ def print_trade_setup(trade: dict, asset: str = "") -> None:
         print_confluences(zones, asset)
 
     if direction == "NEUTRAL" or action == "NO_TRADE":
+        note = (trade.get("notes")
+                or trade.get("action_reason")
+                or trade.get("ict_narrative")
+                or "No trade — ICT model not yet confirmed.")
         console.print(Panel(
-            f"\n  {trade.get('notes', 'No trade — neutral bias.')}\n",
+            f"\n  {note}\n",
             title="[bold]TRADE DECISION[/bold]",
             border_style="yellow",
         ))
@@ -306,6 +356,10 @@ def print_report(
         n.add_row("Calendar", "No high-impact events found")
 
     console.print(Panel(n, title="[bold]NEWS & CALENDAR[/bold]", border_style="blue"))
+
+    # ── ICT Model / Checklist / Narrative ────────────────────────────────────
+    if trade:
+        print_ict_model(trade)
 
     # ── Score Breakdown ──────────────────────────────────────────────────────
     bd = bias.get("breakdown", {})

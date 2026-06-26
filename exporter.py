@@ -85,6 +85,12 @@ def export_analysis(
             "text": summary.get("summary", ""),
             "suggestions": summary.get("suggestions", []),
         },
+        "ict_analysis": {
+            "ict_model":     (trade or {}).get("ict_model"),
+            "daily_bias":    (trade or {}).get("daily_bias"),
+            "ict_narrative": (trade or {}).get("ict_narrative"),
+            "ict_checklist": (trade or {}).get("ict_checklist", {}),
+        },
         "trade_setup": trade or {},
     }
 
